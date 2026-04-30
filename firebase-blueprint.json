@@ -1,0 +1,48 @@
+{
+  "entities": {
+    "Contact": {
+      "title": "Contact",
+      "description": "A business contact for WhatsApp outreach",
+      "type": "object",
+      "properties": {
+        "businessName": { "type": "string" },
+        "contactName": { "type": "string" },
+        "phoneNumber": { "type": "string", "description": "Formatted +263XXXXXXXXX" },
+        "niche": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { 
+          "type": "string", 
+          "enum": ["New", "Opened", "Contacted", "Replied", "Follow Up", "Closed", "Not Interested"]
+        },
+        "draftedMessage": { "type": "string" },
+        "followUpDate": { "type": "string", "format": "date-time" },
+        "lastContactedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["businessName", "phoneNumber", "status", "ownerId"]
+    },
+    "Template": {
+      "title": "Message Blueprint",
+      "description": "Reusable message templates with placeholders",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "content": { "type": "string" },
+        "niche": { "type": "string" },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["name", "content", "ownerId"]
+    }
+  },
+  "firestore": {
+    "contacts": {
+      "schema": "Contact",
+      "description": "Collection of outreach contacts"
+    },
+    "templates": {
+      "schema": "Template",
+      "description": "Collection of message templates"
+    }
+  }
+}
