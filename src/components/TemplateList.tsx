@@ -57,11 +57,11 @@ export const TemplateList: React.FC = () => {
   const niches = Array.from(new Set(templates.map(t => t.niche || 'General')));
 
   const fetchTemplates = async () => {
-    if (!user) return;
+    const effectiveUid = user?.uid || 'guest_sector_01';
     setLoading(true);
     const path = 'templates';
     try {
-      const q = query(collection(db, path), where('ownerId', '==', user.uid));
+      const q = query(collection(db, path), where('ownerId', '==', effectiveUid));
       const snapshot = await getDocs(q);
       setTemplates(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Template)));
     } catch (error) {
@@ -90,7 +90,8 @@ export const TemplateList: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!user || !newName.trim() || !newContent.trim()) return;
+    const effectiveUid = user?.uid || 'guest_sector_01';
+    if (!newName.trim() || !newContent.trim()) return;
 
     if (editingId) {
       const path = `templates/${editingId}`;
@@ -110,7 +111,7 @@ export const TemplateList: React.FC = () => {
           name: newName,
           content: newContent,
           niche: newNiche,
-          ownerId: user.uid
+          ownerId: effectiveUid
         });
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, path);

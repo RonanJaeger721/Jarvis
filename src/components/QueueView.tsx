@@ -132,13 +132,13 @@ export const QueueView: React.FC = () => {
   };
 
   const fetchQueue = useCallback(async () => {
-    if (!user) return;
+    const effectiveUid = user?.uid || 'guest_sector_01';
     setLoading(true);
     const path = 'contacts';
     try {
       const q = query(
         collection(db, path), 
-        where('ownerId', '==', user.uid),
+        where('ownerId', '==', effectiveUid),
         where('status', 'in', ['New', 'Follow Up']),
         orderBy('createdAt', 'asc'),
         limit(50)
@@ -249,7 +249,7 @@ export const QueueView: React.FC = () => {
           // End of current local queue
           setAutoPilot(false);
           playSound('complete');
-          jarvisSpeak(getTacticalResponse('complete'));
+          jarvisSpeak("Nice work, sir. The queue is sanitized. All tactical objectives have been met.");
           fetchQueue(); // Try to get more leads if any
         }
       }

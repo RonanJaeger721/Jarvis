@@ -72,7 +72,8 @@ export const ImportView: React.FC<ImportViewProps> = ({ onComplete }) => {
   };
 
   const handleImport = async () => {
-    if (!user || !bulkText.trim()) return;
+    const effectiveUid = user?.uid || 'guest_sector_01';
+    if (!bulkText.trim()) return;
     setIsProcessing(true);
     setStatusText('Analyzing contact list...');
 
@@ -109,7 +110,7 @@ export const ImportView: React.FC<ImportViewProps> = ({ onComplete }) => {
           notes,
           niche: niche || 'General',
           status: 'New',
-          ownerId: user.uid,
+          ownerId: effectiveUid,
           createdAt: new Date().toISOString(),
         });
       }
@@ -121,7 +122,7 @@ export const ImportView: React.FC<ImportViewProps> = ({ onComplete }) => {
     const templatePath = 'templates';
     let templates: Template[] = [];
     try {
-      const templatesSnap = await getDocs(query(collection(db, templatePath), where('ownerId', '==', user.uid)));
+      const templatesSnap = await getDocs(query(collection(db, templatePath), where('ownerId', '==', effectiveUid)));
       templates = templatesSnap.docs.map(d => ({ id: d.id, ...d.data() } as Template));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, templatePath);
@@ -134,9 +135,9 @@ export const ImportView: React.FC<ImportViewProps> = ({ onComplete }) => {
          const defaultTemp = await addDoc(collection(db, 'templates'), {
            name: 'Default Outreach',
            content: defaultTempContent,
-           ownerId: user.uid
+           ownerId: effectiveUid
          });
-         templates.push({ id: defaultTemp.id, name: 'Default Outreach', content: defaultTempContent, ownerId: user.uid });
+         templates.push({ id: defaultTemp.id, name: 'Default Outreach', content: defaultTempContent, ownerId: effectiveUid });
        } catch (error) {
          handleFirestoreError(error, OperationType.CREATE, 'templates');
        }

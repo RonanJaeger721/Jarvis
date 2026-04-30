@@ -50,13 +50,13 @@ export const ContactList: React.FC = () => {
   const niches = Array.from(new Set(contacts.map(c => c.niche || 'General')));
 
   const fetchContacts = async () => {
-    if (!user) return;
+    const effectiveUid = user?.uid || 'guest_sector_01';
     setLoading(true);
     const path = 'contacts';
     try {
       const q = query(
         collection(db, path), 
-        where('ownerId', '==', user.uid),
+        where('ownerId', '==', effectiveUid),
         orderBy('createdAt', 'desc')
       );
       const snapshot = await getDocs(q);

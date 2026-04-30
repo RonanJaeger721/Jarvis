@@ -52,58 +52,7 @@ function AppContent() {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[#000508] flex items-center justify-center p-6 relative overflow-hidden selection:bg-[#00F2FF]/30">
-        {/* Background Grids */}
-        <div className="absolute inset-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(#00F2FF 1px, transparent 0)', backgroundSize: '40px 40px' }} />
-        
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="w-full max-w-md hud-card p-12 relative z-10 text-center"
-        >
-          <div className="hud-scanning" />
-          
-          <div className="flex justify-center mb-10 relative">
-            <div className="w-20 h-20 border border-[#00F2FF] flex items-center justify-center relative">
-              <Zap className="w-10 h-10 text-[#00F2FF] hud-text-glow fill-[#00F2FF]/20" />
-              <div className="absolute -top-1 -left-1 w-3 h-3 bg-[#00F2FF]" />
-              <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-[#00F2FF]" />
-            </div>
-          </div>
-          
-          <h1 className="text-4xl font-mono font-black text-[#00F2FF] mb-2 tracking-tighter hud-text-glow">JAEGER_HUD</h1>
-          <p className="text-[#A0D2EB]/40 mb-12 text-[10px] font-mono uppercase tracking-[0.3em]">Cognitive Outreach Interface v2.0</p>
-          
-          <div className="relative group">
-            <div className="absolute -inset-4 border border-[#00F2FF]/10 pointer-events-none group-hover:border-[#00F2FF]/30 transition-all" />
-            <button
-              onClick={login}
-              className="hud-button w-full flex items-center justify-center gap-4 py-4"
-            >
-              <LogIn className="w-5 h-5" />
-              AUTHORIZE_UPLINK
-            </button>
-          </div>
-          
-          <div className="mt-12 flex flex-col gap-2">
-            <p className="text-[10px] text-[#A0D2EB]/20 font-mono uppercase tracking-widest leading-loose">
-              [ SECURE_ACCESS_REQUIRED ]<br/>
-              [ IDENTITY_VECTOR_VERIFICATION_PENDING ]
-            </p>
-          </div>
-        </motion.div>
-
-        {/* Decorative HUD Corners */}
-        <div className="fixed top-12 left-12 w-24 h-24 border-t-2 border-l-2 border-[#00F2FF]/10" />
-        <div className="fixed top-12 right-12 w-24 h-24 border-t-2 border-r-2 border-[#00F2FF]/10" />
-        <div className="fixed bottom-12 left-12 w-24 h-24 border-b-2 border-l-2 border-[#00F2FF]/10" />
-        <div className="fixed bottom-12 right-12 w-24 h-24 border-b-2 border-r-2 border-[#00F2FF]/10" />
-      </div>
-    );
-  }
-
+  // Removed strict user check to allow "Guest" mode
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard': return <Dashboard />;

@@ -11,17 +11,18 @@ service cloud.firestore {
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
-    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
-    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isOwner(userId) { return (isSignedIn() && request.auth.uid == userId) || userId == 'guest_sector_01'; }
+    function isVerified() { return (isSignedIn() && request.auth.token.email_verified == true) || incoming().ownerId == 'guest_sector_01'; }
+    function canWrite(userId) { return (isSignedIn() && request.auth.uid == userId && request.auth.token.email_verified == true) || userId == 'guest_sector_01'; }
 
     // Validation helpers
     function isValidContact(data) {
       // Identity Integrity
-      return data.ownerId == request.auth.uid
+      return (data.ownerId == (request.auth != null ? request.auth.uid : 'guest_sector_01') || data.ownerId == 'guest_sector_01')
         // Type Safety & Size Enforcements
         && data.businessName is string && data.businessName.size() <= 200
         && data.phoneNumber is string && data.phoneNumber.size() <= 20
-        && data.status in ['New', 'Opened', 'Contacted', 'Replied', 'Follow Up', 'Closed', 'Not Interested']
+        && data.status in ['New', 'Opened', 'Contacted', 'Replied', 'Follow Up', 'Closed', 'Not Interested', 'Invalid']
         && (data.get('contactName', '') is string && data.get('contactName', '').size() <= 100)
         && (data.get('niche', '') is string && data.get('niche', '').size() <= 100)
         && (data.get('notes', '') is string && data.get('notes', '').size() <= 2000)
@@ -32,50 +33,70 @@ service cloud.firestore {
     }
 
     function isValidTemplate(data) {
-      return data.ownerId == request.auth.uid
+      return (data.ownerId == (request.auth != null ? request.auth.uid : 'guest_sector_01') || data.ownerId == 'guest_sector_01')
         && data.name is string && data.name.size() <= 100
-        && data.content is string && data.content.size() <= 5000
+        && data.content is string && data.content.size() <= 7000
         && (data.get('niche', '') is string && data.get('niche', '').size() <= 100);
+    }
+
+    function isValidGoal(data) {
+      return (data.ownerId == (request.auth != null ? request.auth.uid : 'guest_sector_01') || data.ownerId == 'guest_sector_01')
+        && data.type in ['flyer', 'website', 'ads', 'leads']
+        && data.target is number
+        && data.completed is number
+        && data.date is string;
     }
 
     // 1. Mandatory Size Enforcements & Identity Guarding
     match /contacts/{contactId} {
-      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
-      allow get: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow list: if (isSignedIn() && resource.data.ownerId == request.auth.uid) || resource.data.ownerId == 'guest_sector_01';
+      allow get: if (isSignedIn() && resource.data.ownerId == request.auth.uid) || resource.data.ownerId == 'guest_sector_01';
       
-      allow create: if isVerified() 
+      allow create: if canWrite(incoming().ownerId)
         && isValidContact(incoming())
         && incoming().keys().hasAll(['businessName', 'phoneNumber', 'status', 'ownerId', 'createdAt']);
         
-      allow update: if isVerified()
+      allow update: if canWrite(incoming().ownerId)
         && isValidContact(incoming())
         && incoming().ownerId == existing().ownerId
         && (
-          // Action: Status Update or Follow Up
           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'followUpDate', 'lastContactedAt']) ||
-          // Action: Quick Edits
           incoming().diff(existing()).affectedKeys().hasOnly(['draftedMessage', 'notes']) ||
-          // Action: Full Edit
           incoming().diff(existing()).affectedKeys().hasOnly(['businessName', 'contactName', 'phoneNumber', 'niche', 'notes', 'status', 'draftedMessage', 'followUpDate', 'lastContactedAt'])
         );
         
-      allow delete: if isVerified() && resource.data.ownerId == request.auth.uid;
+      allow delete: if (isSignedIn() && resource.data.ownerId == request.auth.uid) || resource.data.ownerId == 'guest_sector_01';
     }
 
     match /templates/{templateId} {
-      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
-      allow get: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow list: if (isSignedIn() && resource.data.ownerId == request.auth.uid) || resource.data.ownerId == 'guest_sector_01';
+      allow get: if (isSignedIn() && resource.data.ownerId == request.auth.uid) || resource.data.ownerId == 'guest_sector_01';
       
-      allow create: if isVerified() 
+      allow create: if canWrite(incoming().ownerId)
         && isValidTemplate(incoming())
         && incoming().keys().hasAll(['name', 'content', 'ownerId']);
         
-      allow update: if isVerified()
+      allow update: if canWrite(incoming().ownerId)
         && isValidTemplate(incoming())
         && incoming().ownerId == existing().ownerId
         && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'content', 'niche']);
         
-      allow delete: if isVerified() && resource.data.ownerId == request.auth.uid;
+      allow delete: if (isSignedIn() && resource.data.ownerId == request.auth.uid) || resource.data.ownerId == 'guest_sector_01';
+    }
+
+    match /daily_goals/{goalId} {
+      allow list: if (isSignedIn() && resource.data.ownerId == request.auth.uid) || resource.data.ownerId == 'guest_sector_01';
+      allow get: if (isSignedIn() && resource.data.ownerId == request.auth.uid) || resource.data.ownerId == 'guest_sector_01';
+      
+      allow create: if canWrite(incoming().ownerId)
+        && isValidGoal(incoming())
+        && incoming().keys().hasAll(['type', 'target', 'completed', 'date', 'ownerId']);
+        
+      allow update: if canWrite(incoming().ownerId)
+        && isValidGoal(incoming())
+        && incoming().ownerId == existing().ownerId;
+        
+      allow delete: if (isSignedIn() && resource.data.ownerId == request.auth.uid) || resource.data.ownerId == 'guest_sector_01';
     }
 
     // Connection test rule

@@ -17,24 +17,24 @@ export const GoalDashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchGoals = async () => {
-      if (!user) return;
+      const effectiveUid = user?.uid || 'guest_sector_01';
       setLoading(true);
       try {
         const q = query(
           collection(db, 'daily_goals'),
-          where('ownerId', '==', user.uid),
+          where('ownerId', '==', effectiveUid),
           where('date', '==', today)
         );
         const snapshot = await getDocs(q);
         const fetchedGoals = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Goal));
         
         if (fetchedGoals.length === 0) {
-          // Initialize default goals for Ronan
+          // Initialize default goals
           const defaults: Omit<Goal, 'id'>[] = [
-            { type: 'flyer', target: 5, completed: 0, date: today, ownerId: user.uid },
-            { type: 'website', target: 2, completed: 0, date: today, ownerId: user.uid },
-            { type: 'ads', target: 3, completed: 0, date: today, ownerId: user.uid },
-            { type: 'leads', target: 20, completed: 0, date: today, ownerId: user.uid }
+            { type: 'flyer', target: 5, completed: 0, date: today, ownerId: effectiveUid },
+            { type: 'website', target: 2, completed: 0, date: today, ownerId: effectiveUid },
+            { type: 'ads', target: 3, completed: 0, date: today, ownerId: effectiveUid },
+            { type: 'leads', target: 20, completed: 0, date: today, ownerId: effectiveUid }
           ];
           
           const newGoals: Goal[] = [];
@@ -56,6 +56,23 @@ export const GoalDashboard: React.FC = () => {
     fetchGoals();
   }, [user, today]);
 
+  const jarvisSpeak = (text: string) => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const jarvisVoice = voices.find(v => 
+      v.name.includes('Daniel') || 
+      v.name.includes('Google UK English Male') || 
+      (v.lang === 'en-GB' && v.name.includes('Male'))
+    );
+    if (jarvisVoice) utterance.voice = jarvisVoice;
+    utterance.rate = 1.35;
+    utterance.pitch = 0.88;
+    utterance.volume = 0.9;
+    window.speechSynthesis.speak(utterance);
+  };
+
   const updateProgress = async (goalId: string, amount: number) => {
     const goal = goals.find(g => g.id === goalId);
     if (!goal) return;
@@ -64,7 +81,12 @@ export const GoalDashboard: React.FC = () => {
     try {
       await updateDoc(doc(db, 'daily_goals', goalId), { completed: nextVal });
       setGoals(prev => prev.map(g => g.id === goalId ? { ...g, completed: nextVal } : g));
-      if (amount > 0) playSound('process');
+      if (amount > 0) {
+        playSound('process');
+        if (nextVal >= goal.target && goal.completed < goal.target) {
+          jarvisSpeak(`Excellent work, sir. ${getName(goal.type)} objective neutralized.`);
+        }
+      }
     } catch (err) {
       console.error(err);
     }
