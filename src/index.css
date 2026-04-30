@@ -64,6 +64,40 @@
     box-shadow: 0 0 15px rgba(0, 242, 255, 0.2), inset 0 0 10px rgba(0, 242, 255, 0.1);
   }
 
+  .hud-pulse {
+    animation: pulse-hud 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse-hud {
+    0%, 100% { opacity: 1; transform: scale(1); filter: brightness(1); }
+    50% { opacity: 0.7; transform: scale(0.98); filter: brightness(1.2); }
+  }
+
+  .hud-pulse-red {
+    animation: pulse-red 1.5s infinite;
+  }
+
+  @keyframes pulse-red {
+    0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+  }
+
+  .hud-pulse-cyan {
+    animation: pulse-cyan 2s infinite;
+  }
+
+  @keyframes pulse-cyan {
+    0% { box-shadow: 0 0 0 0 rgba(0, 242, 255, 0.4); }
+    70% { box-shadow: 0 0 0 15px rgba(0, 242, 255, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 242, 255, 0); }
+  }
+
+  .hud-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3%3Cfilter id='noiseFilter'%3%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3%3C/filter%3%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3%3C/svg%3");
+    @apply opacity-[0.03] pointer-events-none;
+  }
+
   .hud-scanning {
     @apply absolute top-0 left-0 w-full h-[2px] bg-[#00F2FF] opacity-30 shadow-[0_0_10px_#00F2FF];
     animation: scan 4s linear infinite;

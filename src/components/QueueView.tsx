@@ -526,13 +526,16 @@ export const QueueView: React.FC = () => {
       </div>
 
       {/* HUD Control Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 hud-card p-8 bg-[#00F2FF]/5">
-        <div className="hud-scanning" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 hud-card p-8 bg-[#00F2FF]/5 relative">
+        <div className={cn(
+          "hud-scanning",
+          isCoolingDown ? "bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]" : pacing ? "bg-amber-400" : "bg-[#00F2FF]"
+        )} />
         <div className="flex items-center gap-6">
           <div className="relative">
             <div className={cn(
               "w-14 h-14 border flex items-center justify-center transition-all relative overflow-hidden",
-              autoPilot ? "border-[#00F2FF] bg-[#00F2FF]/10" : "border-[#00F2FF]/20 bg-black/40"
+              autoPilot ? "border-[#00F2FF] bg-[#00F2FF]/10 hud-pulse-cyan" : "border-[#00F2FF]/20 bg-black/40"
             )}>
               <Zap className={cn("w-6 h-6", autoPilot ? "text-[#00F2FF] hud-text-glow" : "text-[#A0D2EB]/30")} />
               {autoPilot && (
@@ -544,7 +547,10 @@ export const QueueView: React.FC = () => {
             {autoPilot && <div className="absolute -top-1 -right-1 w-3 h-3 bg-[#00F2FF] shadow-[0_0_10px_#00F2FF]" />}
           </div>
           <div className="font-mono">
-            <h2 className="font-black text-[#00F2FF] tracking-widest text-sm uppercase">AUTOPILOT_PROTOCOLS ({autoPilot ? 'ACTIVE' : 'IDLE'})</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-black text-[#00F2FF] tracking-widest text-sm uppercase">AUTOPILOT_PROTOCOLS ({autoPilot ? 'ACTIVE' : 'IDLE'})</h2>
+              {autoPilot && <div className="w-2 h-2 bg-[#00F2FF] rounded-full animate-ping" />}
+            </div>
             <p className="text-[10px] text-[#A0D2EB]/50 uppercase tracking-[0.2em] mt-1">
               REMAINING: {contacts.length - currentIndex} / POINTER: {currentIndex + 1}
             </p>
@@ -592,12 +598,16 @@ export const QueueView: React.FC = () => {
       <AnimatePresence mode="wait">
         <motion.div 
           key={activeContact.id}
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 1.05 }}
-          className="hud-card border-[#00F2FF]/30 overflow-hidden relative group/target"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          className={cn(
+            "hud-card border-[#00F2FF]/30 overflow-hidden relative group/target transition-all duration-700",
+            autoPilot && "hud-border-glow border-[#00F2FF]/50"
+          )}
         >
           <div className="hud-glint" />
+          <div className="absolute inset-0 hud-noise" />
           {/* HUD Grids Background */}
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#00F2FF 1px, transparent 0)', backgroundSize: '20px 20px' }} />
           
@@ -758,7 +768,10 @@ export const QueueView: React.FC = () => {
           <div className="p-10 bg-[#00F2FF]/5 border-t border-[#00F2FF]/10 relative group">
             {pacing || isCoolingDown ? (
               <div className="flex flex-col items-center justify-center py-10 relative overflow-hidden">
-                <div className="hud-scanning opacity-50" />
+                <div className={cn(
+                  "hud-scanning",
+                  isCoolingDown ? "bg-red-500 shadow-[0_0_20px_red]" : "bg-amber-400"
+                )} />
                 <div className="relative mb-8">
                   {/* SVG HUD Progress Ring */}
                   <svg className="w-32 h-32 transform -rotate-90">
@@ -780,23 +793,35 @@ export const QueueView: React.FC = () => {
                       fill="transparent"
                       strokeDasharray="364.4"
                       initial={{ strokeDashoffset: 364.4 }}
-                      animate={{ strokeDashoffset: 364.4 - (364.4 * (timeLeft / totalWaitTime)) }}
-                      className="text-[#00F2FF] hud-text-glow"
+                      animate={{ 
+                        strokeDashoffset: 364.4 - (364.4 * (timeLeft / totalWaitTime)),
+                        transition: { duration: 1, ease: "linear" }
+                      }}
+                      className={cn(
+                        "transition-colors duration-500",
+                        isCoolingDown ? "text-red-500 hud-pulse-red" : timeLeft < 10 ? "text-amber-400" : "text-[#00F2FF] hud-text-glow"
+                      )}
                     />
                   </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center font-mono">
-                    <span className="text-2xl font-black text-[#00F2FF] hud-text-glow">
+                  <div className={cn(
+                    "absolute inset-0 flex flex-col items-center justify-center font-mono",
+                    timeLeft < 10 && !isCoolingDown && "animate-pulse"
+                  )}>
+                    <span className={cn(
+                      "text-2xl font-black hud-text-glow",
+                      isCoolingDown ? "text-red-500" : timeLeft < 10 ? "text-amber-400" : "text-[#00F2FF]"
+                    )}>
                       {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                     </span>
-                    <span className="text-[8px] text-[#00F2FF]/40 uppercase">SEC_LEFT</span>
+                    <span className="text-[8px] text-[#00F2FF]/40 uppercase tracking-tighter">SEC_REMAINING</span>
                   </div>
                 </div>
                 
                 <h4 className={cn(
-                  "uppercase text-[11px] font-mono font-black tracking-[0.4em]",
-                  isCoolingDown ? "text-red-500 animate-pulse" : "text-[#00F2FF]"
+                  "uppercase text-[11px] font-mono font-black tracking-[0.4em] transition-all",
+                  isCoolingDown ? "text-red-500 animate-pulse" : pacing && timeLeft < 10 ? "text-amber-400 animate-bounce" : "text-[#00F2FF]"
                 )}>
-                  {isCoolingDown ? 'COOLING_CORE_TEMP' : 'MASKING_USER_PATTERN'}
+                  {isCoolingDown ? 'CRITICAL_COOLDOWN_ACTIVE' : timeLeft < 10 ? 'UPLINK_IMMINENT' : 'MASKING_USER_PATTERN'}
                 </h4>
                 
                 {(!autoPilot || isCoolingDown) && (
