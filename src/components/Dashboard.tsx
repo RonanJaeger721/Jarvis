@@ -76,11 +76,11 @@ export const Dashboard: React.FC = () => {
 
   useEffect(() => {
     const fetchStats = async () => {
-      if (!user) return;
+      const effectiveUid = user?.uid || 'guest_sector_01';
       setLoading(true);
       const path = 'contacts';
       try {
-        const q = query(collection(db, path), where('ownerId', '==', user.uid));
+        const q = query(collection(db, path), where('ownerId', '==', effectiveUid));
         const snapshot = await getDocs(q);
         const data = snapshot.docs.map(doc => doc.data());
         
