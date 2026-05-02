@@ -1,8 +1,8 @@
 {
-  "apiKey": "PASTE_API_KEY_HERE",
-  "authDomain": "PASTE_AUTH_DOMAIN_HERE",
-  "projectId": "PASTE_PROJECT_ID_HERE",
-  "storageBucket": "PASTE_STORAGE_BUCKET_HERE",
-  "messagingSenderId": "PASTE_MESSAGING_SENDER_ID_HERE",
-  "appId": "PASTE_APP_ID_HERE"
+  "apiKey": "AIzaSyA6fMc76e5Q11xJfffnzCGd0eHS0AQSb_w",
+  "authDomain": "ai-studio-applet-webapp-28a6f.firebaseapp.com",
+  "projectId": "ai-studio-applet-webapp-28a6f",
+  "storageBucket": "ai-studio-applet-webapp-28a6f.firebasestorage.app",
+  "messagingSenderId": "6036619994",
+  "appId": "1:6036619994:web:f8b64c4bc44dfb69ba5be3"
 }
