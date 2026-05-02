@@ -1,20 +1,63 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Jaeger WhatsApp Outreach Queue
 
-# Run and deploy your AI Studio app
+A premium automated outreach management system for WhatsApp with AI personalization, safety pacing, and strategic business planning.
 
-This contains everything you need to run your app locally.
+## 🚀 Overview
 
-View your app in AI Studio: https://ai.studio/apps/002d8aba-6ace-4148-a156-a414ecd0730b
+Jaeger is designed for high-performance outreach, helping businesses manage their WhatsApp lead pipeline with automated queuing, AI-generated message personalization using Google Gemini, and a structured 6-month strategic roadmap for growth.
 
-## Run Locally
+## ✨ Key Features
 
-**Prerequisites:**  Node.js
+- **Strategic Roadmap**: A tracked, 6-month progression plan from Month 1 (May) to Month 6 (October) to reach $15k/mo revenue.
+- **Outreach Queue**: Automated pacing for WhatsApp outreach to stay within safety limits and maximize response rates.
+- **AI Personalization**: Deeply personalized message drafting powered by Gemini AI, tailored to specific lead niches and business types.
+- **Business CRM**: Lead management system to track contacts from "New" to "Closed".
+- **Daily Performance Tracking**: Integrated XP system and daily metrics for WhatsApp outreach and personal habits (Reading, Workout, Bible).
+- **Multi-Sector Access**: Specialized access for different tactical sectors (Ronan, Mikey, Guest).
 
+## 🛠️ Tech Stack
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- **Frontend**: React 18, TypeScript, Vite
+- **Styling**: Tailwind CSS, Motion (framer-motion)
+- **Database/Auth**: Firebase (Firestore, Auth)
+- **AI**: Google Gemini Pro (via @google/genai)
+- **Icons**: Lucide React
+
+## 📦 Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/your-username/jaeger-outreach-queue.git
+   cd jaeger-outreach-queue
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Firebase Setup**:
+   - Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com/).
+   - Enable Firestore and Google Authentication.
+   - Download your `firebase-applet-config.json` and place it in the root directory.
+   - Deploy the rules found in `firestore.rules`.
+
+4. **Environment Variables**:
+   - Rename `.env.example` to `.env`.
+   - Add your `GEMINI_API_KEY` for AI features.
+
+5. **Start Development Server**:
+   ```bash
+   npm run dev
+   ```
+
+## 🔐 Security Rules
+
+The project includes a robust `firestore.rules` file that enforces:
+- Identity isolation between tactical sectors.
+- Strict schema validation for all collections.
+- Ownership-based access control.
+
+## 📄 License
+
+MIT

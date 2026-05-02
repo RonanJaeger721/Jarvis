@@ -123,14 +123,14 @@ export const GoalDashboard: React.FC = () => {
             key={goal.id}
             whileHover={{ scale: 1.02 }}
             className={cn(
-              "p-4 bg-black/40 border hud-card transition-all relative overflow-hidden",
+              "p-5 bg-black/40 border hud-card transition-all relative overflow-hidden rounded-[2rem] backdrop-blur-md",
               isDone ? "border-green-500/40 shadow-[0_0_15px_rgba(34,197,94,0.1)]" : "border-[#00F2FF]/20"
             )}
           >
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
                 <div className={cn(
-                  "p-2 border",
+                  "p-2.5 border rounded-full backdrop-blur-xl shadow-inner",
                   isDone ? "border-green-500/20 text-green-500" : "border-[#00F2FF]/20 text-[#00F2FF]"
                 )}>
                   {getIcon(goal.type)}
@@ -140,30 +140,30 @@ export const GoalDashboard: React.FC = () => {
               {isDone && <CheckCircle2 className="w-4 h-4 text-green-500" />}
             </div>
 
-            <div className="flex items-end justify-between mb-2">
+            <div className="flex items-end justify-between mb-3">
               <span className="text-2xl font-mono font-black text-white">{goal.completed} <span className="text-xs text-[#A0D2EB]/30 font-normal">/ {goal.target}</span></span>
-              <div className="flex gap-1">
+              <div className="flex gap-2">
                 <button 
                   onClick={() => updateProgress(goal.id, -1)}
-                  className="w-6 h-6 border border-white/10 flex items-center justify-center hover:bg-white/5 transition-all text-[#A0D2EB]/40"
+                  className="w-8 h-8 border border-white/10 flex items-center justify-center hover:bg-white/5 transition-all text-[#A0D2EB]/40 rounded-full bg-black/20"
                 >
                   -
                 </button>
                 <button 
                   onClick={() => updateProgress(goal.id, 1)}
-                  className="w-6 h-6 border border-[#00F2FF]/20 flex items-center justify-center hover:bg-[#00F2FF]/10 transition-all text-[#00F2FF]"
+                  className="w-8 h-8 border border-[#00F2FF]/30 flex items-center justify-center hover:bg-[#00F2FF]/10 transition-all text-[#00F2FF] rounded-full bg-black/20 shadow-[0_0_10px_rgba(0,242,255,0.1)]"
                 >
                   +
                 </button>
               </div>
             </div>
 
-            <div className="h-1 bg-white/5 w-full overflow-hidden relative">
+            <div className="h-1.5 bg-white/5 w-full overflow-hidden relative rounded-full">
               <motion.div 
                 initial={{ width: 0 }}
                 animate={{ width: `${progress * 100}%` }}
                 className={cn(
-                  "absolute inset-y-0 left-0",
+                  "absolute inset-y-0 left-0 rounded-full",
                   isDone ? "bg-green-500 shadow-[0_0_10px_green]" : "bg-[#00F2FF] shadow-[0_0_10px_#00F2FF]"
                 )}
               />

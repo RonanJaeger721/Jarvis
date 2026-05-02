@@ -14,9 +14,14 @@ import { TemplateList } from './components/TemplateList';
 import { LogIn, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 
+import { Login } from './components/Login';
+
+import { TrackingView } from './components/TrackingView';
+import { PlanView } from './components/PlanView';
+
 function AppContent() {
-  const { user, loading, login } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'queue' | 'contacts' | 'import' | 'templates'>('dashboard');
+  const { user, loading } = useAuth();
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'queue' | 'contacts' | 'import' | 'templates' | 'tracking' | 'plan'>('dashboard');
 
   if (loading) {
     return (
@@ -52,6 +57,10 @@ function AppContent() {
     );
   }
 
+  if (!user) {
+    return <Login />;
+  }
+
   // Removed strict user check to allow "Guest" mode
   const renderContent = () => {
     switch (activeTab) {
@@ -60,6 +69,8 @@ function AppContent() {
       case 'contacts': return <ContactList />;
       case 'import': return <ImportView onComplete={() => setActiveTab('contacts')} />;
       case 'templates': return <TemplateList />;
+      case 'tracking': return <TrackingView />;
+      case 'plan': return <PlanView />;
       default: return <Dashboard />;
     }
   };

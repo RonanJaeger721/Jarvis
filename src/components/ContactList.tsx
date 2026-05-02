@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { collection, query, where, getDocs, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../lib/AuthProvider';
 import { Contact, ContactStatus } from '../types';
 import { Search, Filter, MoreHorizontal, Trash2, Calendar, MessageCircle, ExternalLink, ChevronDown, CheckCircle2, XCircle, Clock, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '../lib/utils';
+import { cn, cleanPhoneForWhatsApp } from '../lib/utils';
 import { format } from 'date-fns';
 
 enum OperationType {
@@ -105,10 +105,51 @@ export const ContactList: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const incrementLog = async (field: string) => {
+    const effectiveUid = user?.uid || 'guest_sector_01';
+    const today = new Date().toISOString().split('T')[0];
+    const logQ = query(collection(db, 'business_logs'), where('ownerId', '==', effectiveUid), where('date', '==', today));
+    const logSnap = await getDocs(logQ);
+    
+    // XP mapping
+    const xpMap: Record<string, number> = {
+      whatsappCount: 5,
+      emailCount: 5,
+      replies: 50,
+      followUps: 30,
+      calls: 100,
+      clients: 1000
+    };
+
+    if (logSnap.empty) {
+      await addDoc(collection(db, 'business_logs'), {
+        date: today,
+        ownerId: effectiveUid,
+        [field]: 1,
+        xpEarned: xpMap[field] || 0
+      });
+    } else {
+      const docRef = logSnap.docs[0].ref;
+      const data = logSnap.docs[0].data();
+      const current = data[field] || 0;
+      const currentXP = data.xpEarned || 0;
+      await updateDoc(docRef, {
+        [field]: current + 1,
+        xpEarned: currentXP + (xpMap[field] || 0)
+      });
+    }
+  };
+
   const updateContactStatus = async (id: string, status: ContactStatus) => {
     const path = `contacts/${id}`;
     try {
       await updateDoc(doc(db, 'contacts', id), { status });
+      
+      // Auto-log for specific tactical states
+      if (status === 'Replied') await incrementLog('replies');
+      if (status === 'Follow Up') await incrementLog('followUps');
+      if (status === 'Closed') await incrementLog('clients');
+      
       fetchContacts();
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
@@ -297,10 +338,21 @@ export const ContactList: React.FC = () => {
                                </div>
                                <div className="flex items-center gap-4 pt-2">
                                   <button 
-                                    onClick={(e) => {
+                                    onClick={async (e) => {
                                       e.stopPropagation();
                                       const msg = encodeURIComponent(contact.draftedMessage || '');
-                                      window.open(`https://wa.me/${contact.phoneNumber.replace('+', '')}?text=${msg}`, '_blank');
+                                      const phoneNum = cleanPhoneForWhatsApp(contact.phoneNumber);
+                                      try {
+                                        await updateDoc(doc(db, 'contacts', contact.id), { 
+                                          status: 'Opened',
+                                          lastContactedAt: new Date().toISOString()
+                                        });
+                                        await incrementLog('whatsappCount');
+                                      } catch (err) {
+                                        console.error(err);
+                                      }
+                                      window.open(`https://wa.me/${phoneNum}?text=${msg}`, 'jaeger_wa_uplink');
+                                      fetchContacts();
                                     }}
                                     className="flex items-center gap-2 px-4 py-2 bg-white text-black font-bold rounded-lg text-xs hover:bg-zinc-200 transition-colors"
                                   >

@@ -37,23 +37,25 @@
 
 @layer components {
   .hud-card {
-    @apply bg-black/40 backdrop-blur-xl border border-[#00F2FF]/20 relative overflow-hidden;
-    box-shadow: inset 0 0 20px rgba(0, 242, 255, 0.05);
+    @apply bg-black/40 backdrop-blur-2xl border border-[#00F2FF]/20 relative overflow-hidden rounded-[2.5rem];
+    box-shadow: 
+      inset 0 0 30px rgba(0, 242, 255, 0.05),
+      0 10px 40px -10px rgba(0, 0, 0, 0.5);
   }
 
   .hud-card::before {
     content: '';
-    @apply absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-[#00F2FF];
+    @apply absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-[#00F2FF]/40 rounded-tl-[2.5rem];
   }
   
   .hud-card::after {
     content: '';
-    @apply absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-[#00F2FF];
+    @apply absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-[#00F2FF]/40 rounded-br-[2.5rem];
   }
 
   .hud-button {
-    @apply relative px-6 py-2 font-mono font-bold uppercase tracking-widest text-[#00F2FF] border border-[#00F2FF]/40 hover:bg-[#00F2FF]/10 active:scale-95 transition-all;
-    clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0% 30%);
+    @apply relative px-8 py-3 font-mono font-black uppercase tracking-widest text-[#00F2FF] border border-[#00F2FF]/40 rounded-full hover:bg-[#00F2FF]/10 active:scale-95 transition-all;
+    box-shadow: 0 0 15px rgba(0, 242, 255, 0.1);
   }
 
   .hud-text-glow {

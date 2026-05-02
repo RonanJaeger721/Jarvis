@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Terminal, Mic, Send, X, Cpu, Activity } from 'lucide-react';
-import { jarvisConsult } from '../services/geminiService';
 import { playSound } from '../lib/audio';
 import { cn } from '../lib/utils';
 
@@ -37,16 +36,28 @@ export const JarvisTerminal: React.FC<JarvisTerminalProps> = ({ onClose, context
     setInput('');
     setIsTyping(true);
     
-    try {
-      const resp = await jarvisConsult(text, history, context);
+    // Mock Jarvis logic - Tactical Hub
+    setTimeout(() => {
+      let resp = "";
+      const lower = text.toLowerCase();
+      
+      if (lower.includes('status') || lower.includes('report')) {
+        resp = "Sir, all systems are operational. Outreach queue is stabilized and message vectors are calibrated.";
+      } else if (lower.includes('goal') || lower.includes('target')) {
+        resp = "Current mission parameters are loaded. We are maintaining trajectory towards our daily acquisition targets.";
+      } else if (lower.includes('hello') || lower.includes('hi')) {
+        resp = "Greetings, Sir. HUD is active. How shall we proceed with today's outreach cycle?";
+      } else if (lower.includes('who are you')) {
+        resp = "I am J.A.R.V.I.S., your tactical strategy interface for Jaeger Media operations. My objective is your market dominance.";
+      } else {
+        resp = "Understood, Sir. I'm processing that directive. We'll adjust the strategy heuristics accordingly.";
+      }
+
       const jarvisMsg: Message = { role: 'model', parts: resp };
       setHistory(prev => [...prev, jarvisMsg]);
       jarvisSpeak(resp);
-    } catch (err) {
-      console.error(err);
-    } finally {
       setIsTyping(false);
-    }
+    }, 800);
   };
 
   const toggleListening = () => {
@@ -91,18 +102,26 @@ export const JarvisTerminal: React.FC<JarvisTerminalProps> = ({ onClose, context
       initial={{ opacity: 0, scale: 0.9, y: 20 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.9, y: 20 }}
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xl"
     >
-      <div className="w-full max-w-2xl h-[600px] bg-black border border-[#00F2FF]/30 hud-card flex flex-col relative overflow-hidden">
+      <div className="w-full max-w-2xl h-[650px] bg-black/40 border border-[#00F2FF]/30 hud-card flex flex-col relative overflow-hidden rounded-[3rem] shadow-[0_0_50px_rgba(0,242,255,0.15)] backdrop-blur-2xl">
         <div className="hud-scanning opacity-10 pointer-events-none" />
         
         {/* Header */}
-        <div className="p-4 border-b border-[#00F2FF]/20 flex items-center justify-between bg-[#00F2FF]/5">
-          <div className="flex items-center gap-3">
-            <Cpu className="w-5 h-5 text-[#00F2FF] animate-pulse" />
-            <h2 className="font-mono font-black text-[#00F2FF] tracking-widest text-sm">JARVIS_STRATEGIC_CONSULT</h2>
+        <div className="p-6 border-b border-[#00F2FF]/20 flex items-center justify-between bg-[#00F2FF]/5">
+          <div className="flex items-center gap-4">
+            <div className="p-2 bg-[#00F2FF]/10 rounded-full border border-[#00F2FF]/30">
+              <Cpu className="w-5 h-5 text-[#00F2FF] animate-pulse" />
+            </div>
+            <div>
+              <h2 className="font-mono font-black text-[#00F2FF] tracking-[0.2em] text-xs">JARVIS_STRATEGIC_CONSULT</h2>
+              <div className="flex items-center gap-1 mt-1">
+                <div className="w-1 h-1 bg-green-500 rounded-full animate-ping" />
+                <span className="text-[8px] text-[#A0D2EB]/30 uppercase font-mono">Core_Status: Ready</span>
+              </div>
+            </div>
           </div>
-          <button onClick={onClose} className="text-[#A0D2EB]/40 hover:text-white transition-colors">
+          <button onClick={onClose} className="p-2 text-[#A0D2EB]/40 hover:text-white transition-all hover:bg-white/5 rounded-full">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -127,10 +146,10 @@ export const JarvisTerminal: React.FC<JarvisTerminalProps> = ({ onClose, context
                 {msg.role === 'user' ? 'Ronan' : 'JARVIS'}
               </span>
               <div className={cn(
-                "max-w-[80%] p-3 border",
+                "max-w-[85%] p-4 border backdrop-blur-md shadow-lg transition-all",
                 msg.role === 'user' 
-                  ? "bg-[#00F2FF]/5 border-[#00F2FF]/20 text-[#00F2FF]" 
-                  : "bg-white/5 border-white/10 text-[#A0D2EB]"
+                  ? "bg-[#00F2FF]/10 border-[#00F2FF]/30 text-[#00F2FF] rounded-[1.5rem_1.5rem_0_1.5rem]" 
+                  : "bg-white/5 border-white/10 text-[#A0D2EB] rounded-[1.5rem_1.5rem_1.5rem_0]"
               )}>
                 {msg.parts}
               </div>
@@ -144,27 +163,31 @@ export const JarvisTerminal: React.FC<JarvisTerminalProps> = ({ onClose, context
         </div>
 
         {/* Input */}
-        <div className="p-4 border-t border-[#00F2FF]/20 bg-black/40">
-          <div className="flex items-center gap-3">
+        <div className="p-6 border-t border-[#00F2FF]/20 bg-black/60 shadow-2xl backdrop-blur-xl">
+          <div className="flex items-center gap-4">
             <button 
               onClick={toggleListening}
               className={cn(
-                "p-3 border transition-all",
-                isListening ? "bg-red-500/20 border-red-500 text-red-500 shadow-[0_0_15px_red]" : "border-[#00F2FF]/20 text-[#00F2FF] hover:border-[#00F2FF]"
+                "p-4 border transition-all rounded-full backdrop-blur-xl",
+                isListening 
+                  ? "bg-red-500/20 border-red-500 text-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)] animate-pulse" 
+                  : "border-[#00F2FF]/20 text-[#00F2FF] hover:border-[#00F2FF] hover:bg-[#00F2FF]/5"
               )}
             >
               <Mic className="w-5 h-5" />
             </button>
-            <input 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="ENTER_COMMAND_OR_STRATEGY_QUERY..."
-              className="flex-1 bg-transparent border-b border-[#00F2FF]/20 py-2 text-[#00F2FF] font-mono text-sm focus:outline-none focus:border-[#00F2FF] transition-colors"
-            />
+            <div className="flex-1 relative group">
+              <input 
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder="ENTER_COMMAND_OR_STRATEGY_QUERY..."
+                className="w-full bg-black/40 border border-[#00F2FF]/10 rounded-full px-6 py-4 text-[#00F2FF] font-mono text-xs focus:outline-none focus:border-[#00F2FF] transition-all backdrop-blur-md group-hover:border-[#00F2FF]/30"
+              />
+            </div>
             <button 
               onClick={() => handleSend()}
-              className="p-3 border border-[#00F2FF]/20 text-[#00F2FF] hover:border-[#00F2FF] transition-all"
+              className="p-4 bg-[#00F2FF]/10 border border-[#00F2FF]/30 text-[#00F2FF] rounded-full hover:bg-[#00F2FF]/20 transition-all shadow-[0_0_15px_rgba(0,242,255,0.2)]"
             >
               <Send className="w-5 h-5" />
             </button>

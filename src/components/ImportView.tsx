@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../lib/AuthProvider';
-import { FileUp, Clipboard, LayoutList, CheckCircle2, RotateCcw, Zap } from 'lucide-react';
+import { FileUp, Clipboard, LayoutList, CheckCircle2, RotateCcw, Zap, Globe, Image, Facebook } from 'lucide-react';
 import { motion } from 'motion/react';
-import { personalizeMessage } from '../services/geminiService';
-import { Template } from '../types';
+import { generateMessage } from '../services/messagingService';
+import { Template, OfferType } from '../types';
+import { cn, formatZimbabweNumber } from '../lib/utils';
 
 enum OperationType {
   CREATE = 'create',
@@ -45,31 +46,11 @@ export const ImportView: React.FC<ImportViewProps> = ({ onComplete }) => {
   const { user } = useAuth();
   const [bulkText, setBulkText] = useState('');
   const [niche, setNiche] = useState('');
+  const [selectedOffer, setSelectedOffer] = useState<OfferType>('Website');
+  const [context, setContext] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('');
-
-  const formatZimbabweNumber = (phone: string) => {
-    let cleaned = phone.replace(/[^\d]/g, ''); // Keep only digits
-    
-    // Remove leading 0
-    if (cleaned.startsWith('0')) {
-      cleaned = cleaned.substring(1);
-    }
-    
-    // If it's just the number (e.g. 772...), add +263
-    if (cleaned.startsWith('7') && (cleaned.length === 9)) {
-      return `+263${cleaned}`;
-    }
-    
-    // If it starts with 263 but no +, add it
-    if (cleaned.startsWith('263')) {
-      return `+${cleaned}`;
-    }
-
-    // Default: if it's long enough, assume it's valid but needs +263 if not present
-    return cleaned.length >= 7 && !cleaned.startsWith('263') ? `+263${cleaned}` : `+${cleaned}`;
-  };
 
   const handleImport = async () => {
     const effectiveUid = user?.uid || 'guest_sector_01';
@@ -77,21 +58,27 @@ export const ImportView: React.FC<ImportViewProps> = ({ onComplete }) => {
     setIsProcessing(true);
     setStatusText('Analyzing contact list...');
 
-    // Split by new line, then comma or tab
     const lines = bulkText.split('\n').filter(l => l.trim());
     const seenNumbers = new Set<string>();
+    
+    // Fetch existing numbers for basic duplicate prevention
+    try {
+      const existingSnap = await getDocs(query(collection(db, 'contacts'), where('ownerId', '==', effectiveUid)));
+      existingSnap.docs.forEach(d => seenNumbers.add(d.data().phoneNumber));
+    } catch (err) {
+      console.error("Duplicate check failed, proceeding with limited detection");
+    }
+
     const newContacts = [];
 
     for (const line of lines) {
       const parts = line.split(/[,\t]/).map(p => p.trim());
-      // Handle "Just Phone Number" vs "Business, Phone, Name, Notes"
       let businessName = '';
       let phoneNumber = '';
       let contactName = '';
       let notes = '';
 
       if (parts.length === 1) {
-        // Just a number
         phoneNumber = formatZimbabweNumber(parts[0]);
         businessName = `Business (${phoneNumber})`;
       } else {
@@ -109,58 +96,69 @@ export const ImportView: React.FC<ImportViewProps> = ({ onComplete }) => {
           contactName,
           notes,
           niche: niche || 'General',
-          status: 'New',
+          offer: selectedOffer,
+          context: context,
+          status: 'New' as const,
           ownerId: effectiveUid,
           createdAt: new Date().toISOString(),
         });
       }
     }
 
-    setStatusText(`Found ${newContacts.length} valid contacts. Processing drafts...`);
+    if (newContacts.length === 0) {
+      setStatusText('ALERT: No new unique leads found in this batch.');
+      setIsProcessing(false);
+      return;
+    }
 
-    // Fetch available templates to rotate
+    setStatusText(`Found ${newContacts.length} valid new contacts. Processing drafts...`);
+
     const templatePath = 'templates';
     let templates: Template[] = [];
     try {
-      const templatesSnap = await getDocs(query(collection(db, templatePath), where('ownerId', '==', effectiveUid)));
+      const templatesSnap = await getDocs(query(
+        collection(db, templatePath), 
+        where('ownerId', '==', effectiveUid),
+        where('offerType', '==', selectedOffer)
+      ));
       templates = templatesSnap.docs.map(d => ({ id: d.id, ...d.data() } as Template));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, templatePath);
     }
 
     if (templates.length === 0) {
-       // Create a default one if none exist
-       const defaultTempContent = "Hey {business_name}, I saw you are in the {niche} space. Would you be open to a quick chat about our services?";
-       try {
-         const defaultTemp = await addDoc(collection(db, 'templates'), {
-           name: 'Default Outreach',
-           content: defaultTempContent,
-           ownerId: effectiveUid
-         });
-         templates.push({ id: defaultTemp.id, name: 'Default Outreach', content: defaultTempContent, ownerId: effectiveUid });
-       } catch (error) {
-         handleFirestoreError(error, OperationType.CREATE, 'templates');
-       }
+       setStatusText('No specific blueprints found for this offer. Using generic fallback...');
+       const fallbackSnap = await getDocs(query(
+         collection(db, templatePath), 
+         where('ownerId', '==', effectiveUid)
+       ));
+       templates = fallbackSnap.docs.map(d => ({ id: d.id, ...d.data() } as Template));
+    }
+
+    if (templates.length === 0) {
+      setStatusText('ALERT: No blueprints available. Please restore defaults in Templates.');
+      setIsProcessing(false);
+      return;
     }
 
     let count = 0;
     const contactPath = 'contacts';
     for (const contact of newContacts) {
       const template = templates[count % templates.length];
-      setStatusText(`Personalizing [${count + 1}/${newContacts.length}]: ${contact.businessName}`);
+      setStatusText(`Calibrating [${count + 1}/${newContacts.length}]: ${contact.businessName}`);
       
-      const draft = await personalizeMessage(
-        template.content,
-        contact.businessName,
-        contact.contactName,
-        contact.niche,
-        contact.notes
-      );
+      const draftedMessage = generateMessage(template.content, {
+        businessName: contact.businessName,
+        contactName: contact.contactName,
+        niche: contact.niche,
+        offer: contact.offer,
+        context: contact.context
+      });
 
       try {
         await addDoc(collection(db, contactPath), {
           ...contact,
-          draftedMessage: draft,
+          draftedMessage,
         });
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, contactPath);
@@ -175,57 +173,98 @@ export const ImportView: React.FC<ImportViewProps> = ({ onComplete }) => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="mb-12">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Batch Loader</h1>
-        <p className="text-zinc-500 text-sm">Bulk paste contacts and let AI generate personalized openers instantly.</p>
+    <div className="max-w-3xl mx-auto">
+      <div className="mb-10">
+        <h1 className="text-3xl font-black tracking-tighter text-[#00F2FF] hud-text-glow">BATCH_LOADER.EXE</h1>
+        <p className="text-[10px] text-[#A0D2EB]/40 uppercase tracking-[0.3em] mt-1">High-Volume Uplink Calibration</p>
       </div>
 
       <div className="space-y-8">
-        <div className="bg-[#121212] border border-white/5 p-8 rounded-3xl space-y-6">
-          <div>
-            <label className="block text-[10px] uppercase tracking-widest font-bold text-zinc-500 mb-3">Niche Category (e.g. Real Estate)</label>
-            <input 
-              type="text" 
-              value={niche}
-              onChange={(e) => setNiche(e.target.value)}
-              placeholder="Real Estate"
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors"
+        <div className="hud-card border-[#00F2FF]/20 p-8 space-y-8 relative overflow-hidden">
+          <div className="hud-scanning" />
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <label className="block text-[9px] uppercase tracking-widest font-black text-[#A0D2EB]/60">1. Target Sector (Niche)</label>
+              <input 
+                type="text" 
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+                placeholder="e.g. Borehole Drillers in Bulawayo"
+                className="w-full bg-black/40 border border-[#00F2FF]/10 rounded-2xl px-5 py-4 text-white focus:outline-none focus:border-[#00F2FF] transition-all font-mono text-xs backdrop-blur-md shadow-inner"
+              />
+            </div>
+
+            <div className="space-y-4">
+              <label className="block text-[9px] uppercase tracking-widest font-black text-[#A0D2EB]/60">2. Tactical Offer</label>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { id: 'Website', icon: Globe },
+                  { id: 'Flyer', icon: Image },
+                  { id: 'Facebook Ads', icon: Facebook }
+                ].map((offer) => (
+                  <button
+                    key={offer.id}
+                    onClick={() => setSelectedOffer(offer.id as OfferType)}
+                    className={cn(
+                      "flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all relative overflow-hidden group",
+                      selectedOffer === offer.id 
+                        ? "bg-[#00F2FF]/10 border-[#00F2FF] text-[#00F2FF] hud-text-glow shadow-[0_0_20px_rgba(0,242,255,0.2)]" 
+                        : "bg-black/20 border-white/5 text-zinc-500 hover:border-white/10"
+                    )}
+                  >
+                    <offer.icon className="w-5 h-5 relative z-10" />
+                    <span className="text-[8px] font-bold uppercase tracking-tighter relative z-10">{offer.id}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <label className="block text-[9px] uppercase tracking-widest font-black text-[#A0D2EB]/60">3. Tactical Context (Optional)</label>
+            <textarea 
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              placeholder="e.g. they don’t have a website, offering a clean website demo..."
+              rows={2}
+              className="w-full bg-black/40 border border-[#00F2FF]/10 rounded-2xl px-5 py-4 text-white focus:outline-none focus:border-[#00F2FF] transition-all font-mono text-xs backdrop-blur-md"
             />
           </div>
 
-          <div>
-            <label className="block text-[10px] uppercase tracking-widest font-bold text-zinc-500 mb-3">Bulk Data Paste</label>
+          <div className="space-y-4">
+            <label className="block text-[9px] uppercase tracking-widest font-black text-[#A0D2EB]/60">4. Acquisition Data (CSV/Tab)</label>
             <textarea 
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
               placeholder="Business Name, Phone Number, Contact Name, Notes..."
-              rows={10}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-white focus:outline-none focus:border-purple-500 transition-colors font-mono text-xs placeholder:text-zinc-700"
+              rows={6}
+              className="w-full bg-black/40 border border-[#00F2FF]/10 rounded-2xl px-5 py-5 text-white focus:outline-none focus:border-[#00F2FF] transition-all font-mono text-[10px] placeholder:text-zinc-800 backdrop-blur-md"
             />
-            <p className="mt-3 text-[10px] text-zinc-600 italic">
-              FORMAT: Business Name, Phone, Contact Name, Notes (Comma or Tab separated)
-            </p>
+            <div className="flex justify-between items-center text-[8px] text-zinc-600 uppercase tracking-widest">
+              <span>FORMAT: NAME, PHONE, CONTACT, NOTES</span>
+              <span className="text-[#00F2FF]/40">Input sanitized: {bulkText.split('\n').filter(l => l.trim()).length} Leads</span>
+            </div>
           </div>
 
           {!isProcessing ? (
             <button 
               onClick={handleImport}
               disabled={!bulkText.trim()}
-              className="w-full py-4 bg-white text-black font-bold uppercase tracking-widest text-sm rounded-xl flex items-center justify-center gap-3 hover:bg-zinc-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              className="w-full py-5 bg-[#00F2FF] text-black font-black uppercase tracking-[0.3em] text-xs rounded-full flex items-center justify-center gap-3 hover:bg-[#00F2FF]/80 transition-all disabled:opacity-30 disabled:cursor-not-allowed group shadow-[0_0_30px_rgba(0,242,255,0.3)]"
             >
-              <Zap className="w-5 h-5 fill-black" />
-              Process & Personalize
+              <Zap className="w-4 h-4 fill-black group-hover:scale-125 transition-transform" />
+              INITIATE_UP_LINK_SEQUENCE
             </button>
           ) : (
             <div className="space-y-4 py-4">
               <div className="flex justify-between items-end mb-2">
-                 <span className="text-xs font-mono text-purple-400 animate-pulse">{statusText}</span>
-                 <span className="text-xs font-mono">{Math.round(progress)}%</span>
+                 <span className="text-[10px] font-mono text-[#00F2FF] animate-pulse uppercase tracking-widest">{statusText}</span>
+                 <span className="text-[10px] font-mono text-[#A0D2EB]">{Math.round(progress)}%</span>
               </div>
-              <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+              <div className="h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
                 <motion.div 
-                  className="h-full bg-purple-600"
+                  className="h-full bg-[#00F2FF] shadow-[0_0_10px_#00F2FF]"
                   initial={{ width: 0 }}
                   animate={{ width: `${progress}%` }}
                 />
@@ -234,24 +273,23 @@ export const ImportView: React.FC<ImportViewProps> = ({ onComplete }) => {
           )}
         </div>
 
-        {/* Info Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-6 bg-[#0A0A0A] border border-white/5 rounded-2xl flex gap-4">
-            <div className="p-3 bg-purple-900/20 rounded-lg shrink-0">
-               <RotateCcw className="w-5 h-5 text-purple-400" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="p-8 hud-card border-white/5 bg-black/20 flex gap-5 rounded-[2rem]">
+            <div className="p-4 bg-[#00F2FF]/5 rounded-2xl shrink-0">
+               <RotateCcw className="w-5 h-5 text-[#00F2FF] opacity-50" />
             </div>
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-widest mb-1">Auto-Rotate</h4>
-              <p className="text-xs text-zinc-500">System automatically cycles through your active message templates to avoid spam patterns.</p>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-[#A0D2EB]/80 mb-2">Pattern Masking</h4>
+              <p className="text-[9px] text-[#A0D2EB]/40 leading-relaxed uppercase tracking-wider">System automatically rotates patterns to ensure variability across networks.</p>
             </div>
           </div>
-          <div className="p-6 bg-[#0A0A0A] border border-white/5 rounded-2xl flex gap-4">
-            <div className="p-3 bg-green-900/20 rounded-lg shrink-0">
-               <CheckCircle2 className="w-5 h-5 text-green-400" />
+          <div className="p-8 hud-card border-white/5 bg-black/20 flex gap-5 rounded-[2rem]">
+            <div className="p-4 bg-green-500/5 rounded-2xl shrink-0">
+               <CheckCircle2 className="w-5 h-5 text-green-500 opacity-50" />
             </div>
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-widest mb-1">Zimbabwe Format</h4>
-              <p className="text-xs text-zinc-500">Phone numbers are automatically cleaned and reformatted to +263 standard.</p>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-[#A0D2EB]/80 mb-2">Region: ZIMBABWE</h4>
+              <p className="text-[9px] text-[#A0D2EB]/40 leading-relaxed uppercase tracking-wider">International formats (+263) applied automatically during acquisition.</p>
             </div>
           </div>
         </div>

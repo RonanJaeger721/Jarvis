@@ -1,13 +1,13 @@
 import React from 'react';
-import { LayoutDashboard, Users, Send, FilePlus, MessageSquare, LogOut, Zap } from 'lucide-react';
+import { LayoutDashboard, Users, Send, FilePlus, MessageSquare, LogOut, Zap, BarChart3, Map } from 'lucide-react';
 import { useAuth } from '../lib/AuthProvider';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'dashboard' | 'queue' | 'contacts' | 'import' | 'templates';
-  setActiveTab: (tab: 'dashboard' | 'queue' | 'contacts' | 'import' | 'templates') => void;
+  activeTab: 'dashboard' | 'queue' | 'contacts' | 'import' | 'templates' | 'tracking' | 'plan';
+  setActiveTab: (tab: 'dashboard' | 'queue' | 'contacts' | 'import' | 'templates' | 'tracking' | 'plan') => void;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
@@ -15,10 +15,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'queue', label: 'Outreach Queue', icon: Send },
+    { id: 'queue', label: 'Outreach', icon: Send },
+    { id: 'tracking', label: 'Logs', icon: BarChart3 },
+    { id: 'plan', label: 'Plan', icon: Map },
     { id: 'contacts', label: 'Contacts', icon: Users },
-    { id: 'import', label: 'Batch Loader', icon: FilePlus },
-    { id: 'templates', label: 'Templates', icon: MessageSquare },
+    { id: 'import', label: 'Import', icon: FilePlus },
+    { id: 'templates', label: 'Library', icon: MessageSquare },
   ] as const;
 
   return (
@@ -59,9 +61,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
       <header className="w-full border-b border-[#00F2FF]/10 bg-black/60 backdrop-blur-2xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-8">
-            <div className="flex items-center gap-3 bg-[#00F2FF]/5 px-4 py-2 border border-[#00F2FF]/10 relative overflow-hidden">
+            <div className="flex items-center gap-3 bg-[#00F2FF]/5 px-4 py-2 border border-[#00F2FF]/10 relative overflow-hidden rounded-full">
               <div className="hud-scanning" />
-              <div className="w-8 h-8 border border-[#00F2FF] flex items-center justify-center relative">
+              <div className="w-8 h-8 border border-[#00F2FF] flex items-center justify-center relative rounded-full">
                 <Zap className="w-4 h-4 text-[#00F2FF] hud-text-glow" />
               </div>
               <span className="font-mono font-black tracking-[0.2em] text-[#00F2FF] block text-sm">JAEGER</span>
@@ -103,13 +105,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
               </div>
               <img 
                 src={user?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email}`} 
-                className="w-10 h-10 border border-[#00F2FF]/30 p-0.5" 
+                className="w-10 h-10 border border-[#00F2FF]/30 p-0.5 rounded-full" 
                 alt="avatar"
               />
             </div>
             <button 
               onClick={logout}
-              className="p-2.5 text-[#A0D2EB]/40 hover:text-red-500 transition-colors border border-[#00F2FF]/10 hover:border-red-500/20"
+              className="p-2.5 text-[#A0D2EB]/40 hover:text-red-500 transition-colors border border-[#00F2FF]/10 hover:border-red-500/20 rounded-full bg-black/40"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -138,21 +140,22 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
       </main>
 
       {/* Mobile Bottom Nav */}
-      <nav className="lg:hidden fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-black/90 backdrop-blur-3xl border border-[#00F2FF]/20 flex justify-around p-2 gap-2 rounded-full px-6 shadow-2xl">
+      <nav className="lg:hidden fixed bottom-6 left-4 right-4 z-50 bg-[#000508]/80 backdrop-blur-3xl border border-[#00F2FF]/20 flex justify-between p-1.5 rounded-[2rem] shadow-2xl px-3 group">
         {navItems.map((item) => (
           <button
             key={item.id}
             onClick={() => setActiveTab(item.id)}
             className={cn(
-              "p-3.5 transition-all relative rounded-full",
-              activeTab === item.id ? "text-[#00F2FF] bg-[#00F2FF]/10" : "text-[#A0D2EB]/30"
+              "flex flex-col items-center justify-center py-2 px-1 rounded-2xl transition-all relative",
+              activeTab === item.id ? "text-[#00F2FF]" : "text-[#A0D2EB]/30"
             )}
           >
-            <item.icon className="w-5 h-5" />
+            <item.icon className={cn("w-4 h-4", activeTab === item.id && "hud-text-glow")} />
+            <span className="text-[7px] font-black uppercase tracking-tighter mt-1">{item.label}</span>
             {activeTab === item.id && (
               <motion.div 
                 layoutId="activeNavMobile"
-                className="absolute inset-0 border border-[#00F2FF]/50 rounded-full"
+                className="absolute inset-0 border border-[#00F2FF]/50 bg-[#00F2FF]/5 rounded-2xl -z-10"
               />
             )}
           </button>

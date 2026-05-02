@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { collection, query, where, getDocs, updateDoc, doc, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, orderBy, limit, addDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { useAuth } from '../lib/AuthProvider';
-import { Contact, ContactStatus } from '../types';
+import { Contact, ContactStatus, OfferType, Template, BusinessLog } from '../types';
 import { Send, Zap, RotateCcw, AlertTriangle, CheckCircle2, Timer, Pause, Play, Edit3, XCircle, ChevronLeft, ChevronRight, MessageSquare, Terminal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { personalizeMessage, generateJaegerMessages, OutreachService } from '../services/geminiService';
-import { cn } from '../lib/utils';
+import { generateMessage } from '../services/messagingService';
+import { cn, cleanPhoneForWhatsApp } from '../lib/utils';
 import { JarvisTerminal } from './JarvisTerminal';
 import { GoalDashboard } from './GoalDashboard';
 import { playSound } from '../lib/audio';
@@ -53,9 +53,14 @@ export const QueueView: React.FC = () => {
   const [autoPilot, setAutoPilot] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [selectedService, setSelectedService] = useState<OutreachService>('Website');
-  const [variations, setVariations] = useState<string[]>([]);
-  const [variationIndex, setVariationIndex] = useState(0);
+  const [selectedOffer, setSelectedOffer] = useState<OfferType>('Website');
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templateIndexMap, setTemplateIndexMap] = useState<Record<string, number>>({
+    'Website': 0,
+    'Flyer': 0,
+    'Facebook Ads': 0,
+    'Other': 0
+  });
   const [editedMessage, setEditedMessage] = useState('');
   const [countSinceCoolDown, setCountSinceCoolDown] = useState(0);
   const [isCoolingDown, setIsCoolingDown] = useState(false);
@@ -83,17 +88,13 @@ export const QueueView: React.FC = () => {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
-    
-    // Advanced selection for best Jarvis proxy
     const jarvisVoice = voices.find(v => 
       v.name.includes('Daniel') || 
       v.name.includes('Google UK English Male') || 
       (v.lang === 'en-GB' && v.name.includes('Male'))
     );
-    
     if (jarvisVoice) utterance.voice = jarvisVoice;
-    // Faster, more realistic Jarvis settings
-    utterance.rate = 1.35; // Jarvis fast mode
+    utterance.rate = 1.35;
     utterance.pitch = 0.88;
     utterance.volume = 0.9;
     window.speechSynthesis.speak(utterance);
@@ -117,9 +118,9 @@ export const QueueView: React.FC = () => {
         "Mission successful. All data packets successfully delivered."
       ],
       gen: [
-        "Analyzing target resonance... synthesizing tactical response.",
-        "Running social heuristics. Drafting a persuasive uplink... there we go.",
-        "Scanning profile data. Neural draft complete and optimized for impact."
+        "Recalibrating message vector... applying niche heuristics.",
+        "Selecting next communication module from the blueprint library.",
+        "Synchronizing template with target lead data... done."
       ],
       fail: [
         "Sir, we have an uplink interference. Permission required.",
@@ -129,6 +130,17 @@ export const QueueView: React.FC = () => {
     };
     const set = responses[type];
     return set[Math.floor(Math.random() * set.length)];
+  };
+
+  const fetchTemplates = async () => {
+    const effectiveUid = user?.uid || 'guest_sector_01';
+    try {
+      const q = query(collection(db, 'templates'), where('ownerId', '==', effectiveUid));
+      const snapshot = await getDocs(q);
+      setTemplates(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Template)));
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+    }
   };
 
   const fetchQueue = useCallback(async () => {
@@ -157,7 +169,11 @@ export const QueueView: React.FC = () => {
 
       setContacts(filtered);
       if (filtered[0]) {
-        setEditedMessage(filtered[0].draftedMessage || '');
+        // Initial cycle for the first contact
+        const firstContact = filtered[0];
+        const initialOffer = (firstContact.offer as OfferType) || 'Website';
+        setSelectedOffer(initialOffer);
+        // We defer message generation to the useEffect that watches selectedOffer/currentIndex
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
@@ -166,19 +182,26 @@ export const QueueView: React.FC = () => {
     }
   }, [user]);
 
+  // Initial boot sequence
   useEffect(() => {
     fetchQueue();
-    // Jarvis Welcome
+    fetchTemplates();
     setTimeout(() => {
       jarvisSpeak("Outreach grid online. I'm scanning for active signatures in your sector, sir.");
       playSound('start');
     }, 1000);
-  }, [fetchQueue]);
+  }, [fetchQueue, user]);
+
+  // Automatic cycle trigger when contact or offer changes
+  useEffect(() => {
+    if (activeContact && templates.length > 0) {
+      cycleToNextMessage(selectedOffer, activeContact);
+    }
+  }, [currentIndex, selectedOffer, templates.length === 0]);
 
   const toggleAutoPilot = () => {
     const newState = !autoPilot;
     setAutoPilot(newState);
-    
     if (newState) {
       if (!calibrated) {
         jarvisSpeak("Sir, I'll need you to calibrate the holographic uplink first. Use the initialization module in the control bar.");
@@ -187,11 +210,8 @@ export const QueueView: React.FC = () => {
         return;
       }
       jarvisSpeak(getTacticalResponse('engage'));
-      // If we're not currently pacing or cooling, and we have a target, engage after a brief human-like pause
       if (!pacing && !isCoolingDown && activeContact) {
-        setTimeout(() => {
-          handleOpenWhatsApp();
-        }, 2500); // 2.5s tactical delay
+        setTimeout(() => handleOpenWhatsApp(), 2500);
       }
     } else {
       jarvisSpeak("Manual control restored. I'm staying in the shadows for now.");
@@ -202,7 +222,7 @@ export const QueueView: React.FC = () => {
     jarvisSpeak("Calibrating holographic uplink... stand by.");
     const win = window.open('about:blank', '_blank', 'width=1,height=1');
     if (win) {
-      setTimeout(() => win.close(), 1000); // 1s to ensure browser registers interaction
+      setTimeout(() => win.close(), 1000);
       setCalibrated(true);
       jarvisSpeak("Uplink synchronized. We are green across the board, sir.");
       playSound('start');
@@ -212,7 +232,6 @@ export const QueueView: React.FC = () => {
     }
   };
 
-  // Timer logic
   useEffect(() => {
     if (timeLeft > 0) {
       timerRef.current = setTimeout(() => {
@@ -229,28 +248,25 @@ export const QueueView: React.FC = () => {
           playSound('start');
         }
         
-        // Automatic jump to next
         const nextIdx = currentIndex + 1;
         if (nextIdx < contacts.length) {
           setCurrentIndex(nextIdx);
-          setEditedMessage(contacts[nextIdx].draftedMessage || '');
+          // Rotation is handled by the useEffect watching currentIndex
           setIsEditing(false);
           
           const nextTarget = contacts[nextIdx];
           playSound('scan');
           jarvisSpeak(getTacticalResponse('next').replace('next asset', nextTarget.businessName));
           
-          // Delay transmission with a human-like tactical jitter (4s base + 0.5s-2s random)
           const tacticalJitter = 4000 + (Math.random() * 1500);
           setTimeout(() => {
             handleOpenWhatsApp(contacts[nextIdx], true);
           }, tacticalJitter);
         } else {
-          // End of current local queue
           setAutoPilot(false);
           playSound('complete');
           jarvisSpeak("Nice work, sir. The queue is sanitized. All tactical objectives have been met.");
-          fetchQueue(); // Try to get more leads if any
+          fetchQueue();
         }
       }
     }
@@ -259,30 +275,14 @@ export const QueueView: React.FC = () => {
     };
   }, [timeLeft, pacing, isCoolingDown, autoPilot, contacts, currentIndex, fetchQueue]);
 
-  // Focus detection for auto-return
-  useEffect(() => {
-    const onFocus = () => {
-      if (pacing === false && timeLeft === 0 && !isCoolingDown) {
-         // If user returned after an "Open", start pacing
-         // But we only want this if we *actually* triggered an open
-      }
-    };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [pacing, timeLeft, isCoolingDown]);
-
   const startPacing = () => {
     setPacing(true);
-    // Randomize the interval slightly to look human (+/- 10%)
     const variation = Math.floor(pacingInterval * 0.1);
     const randomDelay = pacingInterval + (Math.random() > 0.5 ? variation : -variation);
     setTimeLeft(randomDelay);
     setTotalWaitTime(randomDelay);
-    
-    // Increment counter for cooldown
     const nextCount = countSinceCoolDown + 1;
     setCountSinceCoolDown(nextCount);
-    
     if (nextCount >= cooldownThreshold) {
       setIsCoolingDown(true);
       setTimeLeft(cooldownDuration);
@@ -292,152 +292,116 @@ export const QueueView: React.FC = () => {
     }
   };
 
-  const handleGenerateMessage = async (autoResume = false) => {
-    if (!activeContact) return;
-    setGenerating(true);
-    playSound('start');
-    jarvisSpeak(getTacticalResponse('gen'));
-    try {
-      const vars = await generateJaegerMessages(
-        selectedService,
-        activeContact.businessName,
-        activeContact.niche || "",
-        `Status: ${activeContact.status}`
-      );
-      
-      setVariations(vars);
-      setVariationIndex(0);
-      setEditedMessage(vars[0] || "");
-      setIsEditing(true);
-      jarvisSpeak("Tactical draft uploaded, sir. It's quite persuasive.");
-      
-      if (autoResume && autoPilot) {
-        setTimeout(() => handleOpenWhatsApp(activeContact, true), 1500);
-      }
-    } catch (error) {
-      jarvisSpeak("Neural link interrupted. Error in synthesis.");
-      console.error(error);
-    } finally {
-      setGenerating(false);
+  const cycleToNextMessage = (offer: OfferType, contact: Contact) => {
+    if (!contact) return;
+    const filtered = templates.filter(t => t.offerType === offer);
+    if (filtered.length === 0) {
+      setEditedMessage(contact.draftedMessage || '');
+      return;
     }
+    
+    const currentIndexForTier = templateIndexMap[offer] || 0;
+    const nextIdx = (currentIndexForTier) % filtered.length;
+    
+    // Update index map for NEXT time this tier is used
+    setTemplateIndexMap(prev => ({
+      ...prev,
+      [offer]: (nextIdx + 1) % filtered.length
+    }));
+    
+    const template = filtered[nextIdx];
+    const newMessage = generateMessage(template.content, {
+      businessName: contact.businessName,
+      contactName: contact.contactName,
+      niche: contact.niche,
+      offer: offer,
+      context: contact.context
+    });
+    
+    setEditedMessage(newMessage);
+    setIsEditing(false);
+    playSound('scan');
   };
 
-  const cycleVariation = (dir: 'next' | 'prev') => {
-    if (variations.length === 0) return;
-    let nextIdx = dir === 'next' ? variationIndex + 1 : variationIndex - 1;
-    if (nextIdx >= variations.length) nextIdx = 0;
-    if (nextIdx < 0) nextIdx = variations.length - 1;
+  const handleRotateBlueprint = () => {
+    if (!activeContact) return;
+    cycleToNextMessage(selectedOffer, activeContact);
+    jarvisSpeak("Manual rotation triggered. Selecting next blueprint variation.");
+  };
+
+  const incrementLog = async (field: keyof BusinessLog) => {
+    const effectiveUid = user?.uid || 'guest_sector_01';
+    const today = new Date().toISOString().split('T')[0];
+    const logQ = query(collection(db, 'business_logs'), where('ownerId', '==', effectiveUid), where('date', '==', today));
+    const logSnap = await getDocs(logQ);
     
-    setVariationIndex(nextIdx);
-    setEditedMessage(variations[nextIdx]);
-    playSound('scan');
+    // XP mapping
+    const xpMap: Partial<Record<keyof BusinessLog, number>> = {
+      whatsappCount: 5,
+      emailCount: 5,
+      replies: 50,
+      followUps: 30,
+      calls: 100,
+      clients: 1000
+    };
+
+    if (logSnap.empty) {
+      await addDoc(collection(db, 'business_logs'), {
+        date: today,
+        ownerId: effectiveUid,
+        [field]: 1,
+        whatsappCount: field === 'whatsappCount' ? 1 : 0,
+        xpEarned: xpMap[field] || 0
+      });
+    } else {
+      const docRef = logSnap.docs[0].ref;
+      const data = logSnap.docs[0].data();
+      const current = (data[field as string] || 0) as number;
+      const currentXP = (data.xpEarned || 0) as number;
+      await updateDoc(docRef, {
+        [field]: current + 1,
+        xpEarned: currentXP + (xpMap[field] || 0)
+      });
+    }
   };
 
   const handleOpenWhatsApp = async (contactToOpen = activeContact, isAuto = false) => {
     if (!contactToOpen) return;
-
     if (!isAuto) {
       playSound('start');
       jarvisSpeak("Establishing manual link, sir. Stand by for transmission.");
     }
-
     const message = editedMessage || contactToOpen.draftedMessage || '';
-    
-    if (isAuto && !message) {
-      jarvisSpeak(`Asset ${contactToOpen.businessName} lacks a draft. I'll synthesize one now.`);
-      await handleGenerateMessage(true);
-      return; 
-    }
-
     const encodedMessage = encodeURIComponent(message);
     
-    // Hardened Zimbabwe formatting: Must follow 263... pattern for browser/app integration
-    let phoneNum = contactToOpen.phoneNumber.replace(/[^\d]/g, '');
-    if (phoneNum.startsWith('0')) {
-      phoneNum = '263' + phoneNum.substring(1);
-    } else if (phoneNum.length === 9) {
-       phoneNum = '263' + phoneNum;
-    } else if (phoneNum.startsWith('263')) {
-      // already good
-    } else {
-       phoneNum = '263' + phoneNum;
-    }
-    
+    const phoneNum = cleanPhoneForWhatsApp(contactToOpen.phoneNumber);
     const url = `https://wa.me/${phoneNum}?text=${encodedMessage}`;
-
     const path = `contacts/${contactToOpen.id}`;
     try {
       await updateDoc(doc(db, 'contacts', contactToOpen.id), {
         status: 'Opened',
         lastContactedAt: new Date().toISOString()
       });
+      await incrementLog('whatsappCount');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
 
-    const win = window.open(url, '_blank');
-    
+    const win = window.open(url, 'jaeger_wa_uplink');
     if (isAuto) {
       if (!win) {
-        jarvisSpeak(`Uplink to ${contactToOpen.businessName} failed. Flagging as invalid and recalibrating.`);
+        jarvisSpeak(`Uplink to ${contactToOpen.businessName} failed. Browser defenses detected.`);
         playSound('alert');
-        // Automatically report as invalid and move to next
-        await reportInvalid(); 
+        await updateDoc(doc(db, 'contacts', contactToOpen.id), { status: 'Invalid' });
+        nextContact();
         return;
       }
-      jarvisSpeak(`Packet delivered to ${contactToOpen.businessName}. Commencing recovery phase.`);
+      jarvisSpeak(`Uplink established for ${contactToOpen.businessName}. Reusing tactical window.`);
       playSound('scan');
-    }
-
-    startPacing();
-  };
-
-  const reportInvalid = async () => {
-    if (!activeContact) return;
-    jarvisSpeak(`ID error detected for ${activeContact.businessName}. Filtering from queue.`);
-    playSound('alert');
-    try {
-      await updateDoc(doc(db, 'contacts', activeContact.id), { status: 'Invalid' });
-      
-      if (autoPilot) {
-        // If in autopilot, we don't need a full pacing delay because no message was sent
-        jarvisSpeak("Skipping invalid entry. Recalibrating coordinates.");
-        // Set a short delay before jumping to the next
-        setPacing(true);
-        setTimeLeft(3); // 3 second skip delay
-        setTotalWaitTime(3);
-      } else {
-        nextContact();
-      }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `contacts/${activeContact.id}`);
-    }
-  };
-
-  const nextContact = () => {
-    if (currentIndex < contacts.length - 1) {
-      const nextIdx = currentIndex + 1;
-      setCurrentIndex(nextIdx);
-      setEditedMessage(contacts[nextIdx].draftedMessage || '');
-      setIsEditing(false);
-      
-      if (autoPilot) {
-        // If autoPilot was on but we reached here via manual button click
-        // Wait a short bit then trigger
-        const nextTarget = contacts[nextIdx];
-        jarvisSpeak(getTacticalResponse('next').replace('next asset', nextTarget.businessName));
-        playSound('scan');
-        setTimeout(() => handleOpenWhatsApp(nextTarget, true), 3000);
-      }
     } else {
-      if (autoPilot) {
-        setAutoPilot(false);
-        playSound('complete');
-        jarvisSpeak(getTacticalResponse('complete'));
-      }
-      fetchQueue();
-      setCurrentIndex(0);
+      jarvisSpeak("Tactical window synchronized. Reusing active link.");
     }
+    startPacing();
   };
 
   const updateStatus = async (status: ContactStatus) => {
@@ -448,6 +412,30 @@ export const QueueView: React.FC = () => {
       nextContact();
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  };
+
+  const reportInvalid = async () => {
+    if (!activeContact) return;
+    jarvisSpeak(`ID error detected for ${activeContact.businessName}. Filtering from queue.`);
+    playSound('alert');
+    try {
+      await updateDoc(doc(db, 'contacts', activeContact.id), { status: 'Invalid' });
+      nextContact();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `contacts/${activeContact.id}`);
+    }
+  };
+
+  const nextContact = () => {
+    if (currentIndex < contacts.length - 1) {
+      const nextIdx = currentIndex + 1;
+      setCurrentIndex(nextIdx);
+      // Rotation handled by useEffect
+      setIsEditing(false);
+    } else {
+      setAutoPilot(false);
+      fetchQueue();
     }
   };
 
@@ -526,25 +514,25 @@ export const QueueView: React.FC = () => {
       </div>
 
       {/* HUD Control Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 hud-card p-8 bg-[#00F2FF]/5 relative">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 hud-card p-6 bg-[#00F2FF]/5 relative rounded-[3rem] backdrop-blur-3xl shadow-2xl">
         <div className={cn(
-          "hud-scanning",
+          "hud-scanning rounded-full",
           isCoolingDown ? "bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]" : pacing ? "bg-amber-400" : "bg-[#00F2FF]"
         )} />
         <div className="flex items-center gap-6">
           <div className="relative">
             <div className={cn(
-              "w-14 h-14 border flex items-center justify-center transition-all relative overflow-hidden",
+              "w-16 h-16 border flex items-center justify-center transition-all relative overflow-hidden rounded-full backdrop-blur-xl shadow-lg",
               autoPilot ? "border-[#00F2FF] bg-[#00F2FF]/10 hud-pulse-cyan" : "border-[#00F2FF]/20 bg-black/40"
             )}>
-              <Zap className={cn("w-6 h-6", autoPilot ? "text-[#00F2FF] hud-text-glow" : "text-[#A0D2EB]/30")} />
+              <Zap className={cn("w-7 h-7", autoPilot ? "text-[#00F2FF] hud-text-glow" : "text-[#A0D2EB]/30")} />
               {autoPilot && (
                 <div className="absolute inset-0 flex items-center justify-center">
                    <div className="w-full h-[1px] bg-[#00F2FF]/30 absolute top-1/4 animate-scan" />
                 </div>
               )}
             </div>
-            {autoPilot && <div className="absolute -top-1 -right-1 w-3 h-3 bg-[#00F2FF] shadow-[0_0_10px_#00F2FF]" />}
+            {autoPilot && <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#00F2FF] shadow-[0_0_10px_#00F2FF] rounded-full border-2 border-black" />}
           </div>
           <div className="font-mono">
             <div className="flex items-center gap-2">
@@ -554,6 +542,30 @@ export const QueueView: React.FC = () => {
             <p className="text-[10px] text-[#A0D2EB]/50 uppercase tracking-[0.2em] mt-1">
               REMAINING: {contacts.length - currentIndex} / POINTER: {currentIndex + 1}
             </p>
+            {(pacing || isCoolingDown) && (
+              <div className="mt-2 flex items-center gap-3 animate-pulse">
+                <div className="h-1 w-24 bg-black/40 rounded-full overflow-hidden border border-[#00F2FF]/10 relative">
+                  <motion.div 
+                    initial={{ width: '100%' }}
+                    animate={{ width: `${(timeLeft / totalWaitTime) * 100}%` }}
+                    transition={{ duration: 1, ease: 'linear' }}
+                    className={cn(
+                      "h-full",
+                      isCoolingDown ? "bg-red-400" : "bg-[#00F2FF]"
+                    )}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                   <div className={cn("w-1 h-1 rounded-full", isCoolingDown ? "bg-red-400" : "bg-[#00F2FF] animate-ping")} />
+                   <span className={cn(
+                     "text-[10px] font-mono font-black tracking-widest",
+                     isCoolingDown ? "text-red-400" : "text-[#00F2FF]"
+                   )}>
+                     {timeLeft}S
+                   </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -568,7 +580,7 @@ export const QueueView: React.FC = () => {
              </button>
            )}
 
-           <div className="flex items-center gap-3 bg-black/40 border border-[#00F2FF]/20 px-4 py-2 relative">
+           <div className="flex items-center gap-3 bg-black/40 border border-[#00F2FF]/20 px-6 py-2.5 relative rounded-full backdrop-blur-xl">
              <Timer className="w-4 h-4 text-[#00F2FF]" />
              <select 
                value={pacingInterval}
@@ -625,34 +637,37 @@ export const QueueView: React.FC = () => {
             <div className="hud-scanning opacity-10" />
             <div className="relative">
               <div className="absolute -left-12 top-1/2 -translate-y-1/2 w-8 h-[1px] bg-[#00F2FF]/40 hidden lg:block" />
-              <div className="flex items-center gap-4 mb-4">
-                <span className="px-3 py-1 bg-[#00F2FF]/10 text-[#00F2FF] text-[9px] font-mono font-bold uppercase tracking-[0.3em] border border-[#00F2FF]/30">
-                  {activeContact.niche?.toUpperCase() || 'EXTERNAL_ASSET'}
-                </span>
-                <span className="text-[#A0D2EB]/30 text-[10px] font-mono tracking-tighter flex items-center gap-2">
-                   <div className="w-1.5 h-1.5 bg-[#00F2FF] rounded-full animate-pulse" />
-                   COORD: {activeContact.phoneNumber}
-                </span>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center bg-black/40 border border-[#00F2FF]/20 rounded-full overflow-hidden backdrop-blur-md shadow-[0_0_15px_rgba(0,242,255,0.05)]">
+                  <span className="px-4 py-1.5 bg-[#00F2FF]/10 text-[#00F2FF] text-[9px] font-mono font-black uppercase tracking-[0.3em] border-r border-[#00F2FF]/30">
+                    {activeContact.niche?.toUpperCase() || 'EXTERNAL_ASSET'}
+                  </span>
+                  <span className="px-4 py-1.5 text-[#A0D2EB]/60 text-[10px] font-mono tracking-tighter flex items-center gap-2">
+                     <div className="w-1.5 h-1.5 bg-[#00F2FF] rounded-full animate-pulse shadow-[0_0_5px_#00F2FF]" />
+                     {activeContact.phoneNumber}
+                  </span>
+                </div>
               </div>
-              <h1 className="text-5xl font-mono font-black tracking-tighter text-[#00F2FF] hud-text-glow uppercase relative">
+              <h1 className="text-6xl font-mono font-black tracking-tighter text-[#00F2FF] hud-text-glow uppercase relative leading-none">
                 {activeContact.businessName}
-                <div className="absolute -bottom-2 left-0 w-32 h-[2px] bg-gradient-to-r from-[#00F2FF] to-transparent" />
+                <div className="absolute -bottom-4 left-0 w-48 h-[3px] bg-gradient-to-r from-[#00F2FF] to-transparent rounded-full" />
               </h1>
               {activeContact.contactName && (
-                <div className="flex items-center gap-2 mt-4 bg-[#00F2FF]/5 border-l border-[#00F2FF] px-3 py-1">
+                <div className="flex items-center gap-2 mt-6 bg-[#00F2FF]/5 border-l-2 border-[#00F2FF] px-4 py-2 rounded-r-xl backdrop-blur-sm">
                   <span className="text-[#00F2FF]/40 text-[9px] font-mono uppercase tracking-[0.2em]">Target_Admin:</span>
-                  <p className="text-[#A0D2EB] font-bold tracking-[0.15em] uppercase text-[11px]">{activeContact.contactName}</p>
+                  <p className="text-[#A0D2EB] font-black tracking-[0.15em] uppercase text-[12px]">{activeContact.contactName}</p>
                 </div>
               )}
             </div>
             
-            <div className="grid grid-cols-2 gap-2 w-full md:w-auto">
+            <div className="grid grid-cols-2 gap-3 w-full md:w-auto">
                {['Contacted', 'Interested', 'Replied', 'Not Interested'].map((status) => (
                  <button
                    key={status}
                    onClick={() => updateStatus(status as ContactStatus)}
-                   className="px-4 py-3 bg-black/40 hover:bg-[#00F2FF]/10 text-[#A0D2EB]/40 hover:text-[#00F2FF] text-[9px] font-mono font-bold transition-all border border-[#00F2FF]/10 uppercase tracking-[0.2em] relative overflow-hidden"
+                   className="px-5 py-3.5 bg-black/40 hover:bg-[#00F2FF]/10 text-[#A0D2EB]/40 hover:text-[#00F2FF] text-[9px] font-mono font-black transition-all border border-[#00F2FF]/10 uppercase tracking-[0.2em] relative overflow-hidden rounded-full backdrop-blur-md group/status"
                  >
+                   <div className="absolute inset-0 bg-gradient-to-tr from-[#00F2FF]/5 to-transparent opacity-0 group-hover/status:opacity-100 transition-opacity" />
                    <span className="relative z-10">{status}</span>
                  </button>
                ))}
@@ -686,18 +701,18 @@ export const QueueView: React.FC = () => {
              <div className="lg:col-span-9 p-10 bg-black/10">
                 <div className="flex flex-col gap-6 mb-6">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-[#00F2FF]/60 text-[10px] font-mono uppercase tracking-[0.3em] font-black border-l-2 border-[#00F2FF] pl-3">Neural_Draft_v5.0_Jaeger</h3>
+                    <h3 className="text-[#00F2FF]/60 text-[10px] font-mono uppercase tracking-[0.3em] font-black border-l-2 border-[#00F2FF] pl-3">JAEGER_MESSAGING_ENGINE_v1.0</h3>
                     <div className="flex items-center gap-6">
                       <button
-                        onClick={() => handleGenerateMessage()}
+                        onClick={handleRotateBlueprint}
                         disabled={generating}
                         className={cn(
                           "flex items-center gap-2 text-[9px] font-mono text-[#00F2FF]/40 hover:text-[#00F2FF] transition-all group",
                           generating && "animate-pulse"
                         )}
                       >
-                        <RotateCcw className={cn("w-3 h-3 group-hover:rotate-180 transition-transform duration-500", generating && "animate-spin")} />
-                        {generating ? 'SYNTHESIZING...' : 'REGENERATE_TACTICAL_DATA'}
+                        <RotateCcw className={cn("w-3 h-3 group-hover:rotate-180 transition-transform duration-500")} />
+                        ROTATE_BLUEPRINT
                       </button>
                       <button 
                         onClick={() => setIsEditing(!isEditing)}
@@ -709,41 +724,41 @@ export const QueueView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Service Selection Tabs */}
+                  {/* Service Selection Tabs (Offer Core) */}
                   <div className="flex flex-wrap gap-2 border-b border-[#00F2FF]/5 pb-4">
-                    {(['Website', 'Facebook Ads', 'Flyers', 'Lead Generation', 'Custom', 'Follow-up'] as OutreachService[]).map((service) => (
+                    {(['Website', 'Flyer', 'Facebook Ads', 'Other'] as OfferType[]).map((offer) => (
                       <button
-                        key={service}
+                        key={offer}
                         onClick={() => {
-                          setSelectedService(service);
+                          setSelectedOffer(offer);
                           playSound('scan');
                         }}
                         className={cn(
-                          "px-3 py-1 text-[8px] font-mono uppercase tracking-widest border transition-all",
-                          selectedService === service 
-                            ? "border-[#00F2FF] text-[#00F2FF] bg-[#00F2FF]/5" 
-                            : "border-transparent text-[#A0D2EB]/30 hover:text-[#A0D2EB]/60"
+                          "px-4 py-1.5 text-[8px] font-mono font-black uppercase tracking-widest border transition-all rounded-full backdrop-blur-sm",
+                          selectedOffer === offer 
+                            ? "border-[#00F2FF] text-[#00F2FF] bg-[#00F2FF]/10 shadow-[0_0_10px_rgba(0,242,255,0.2)]" 
+                            : "border-white/10 text-[#A0D2EB]/30 hover:text-[#A0D2EB]/60 hover:bg-white/5"
                         )}
                       >
-                        {service}
+                        {offer}
                       </button>
                     ))}
                   </div>
                 </div>
                 
-                <div className="hud-card bg-black/40 border-[#00F2FF]/5 p-8 min-h-[220px] relative group/msg">
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-20">
-                    <div className="w-1 h-3 bg-[#00F2FF]" />
-                    <div className="w-1 h-1 bg-[#00F2FF]" />
+                <div className="hud-card bg-black/40 border-[#00F2FF]/5 p-8 min-h-[220px] relative group/msg rounded-[2rem] shadow-inner backdrop-blur-xl">
+                  <div className="absolute top-4 right-6 flex gap-1 opacity-20">
+                    <div className="w-1.5 h-3 bg-[#00F2FF] rounded-full" />
+                    <div className="w-1.5 h-1.5 bg-[#00F2FF] rounded-full" />
                   </div>
 
-                  {/* Variation Controls */}
-                  {variations.length > 0 && !isEditing && (
-                    <div className="absolute -bottom-10 right-0 flex items-center gap-4 bg-black/60 border border-[#00F2FF]/10 px-4 py-2 opacity-0 group-hover/msg:opacity-100 transition-opacity">
-                      <span className="text-[8px] font-mono text-[#00F2FF]/40 uppercase tracking-widest">Variation {variationIndex + 1}/{variations.length}</span>
+                  {templates.filter(t => t.offerType === selectedOffer).length > 0 && !isEditing && (
+                    <div className="absolute -bottom-10 right-4 flex items-center gap-4 bg-black/60 border border-[#00F2FF]/10 px-5 py-2.5 opacity-0 group-hover/msg:opacity-100 transition-all rounded-full backdrop-blur-xl shadow-lg translate-y-4 group-hover/msg:translate-y-0">
+                      <span className="text-[8px] font-mono text-[#00F2FF]/40 uppercase tracking-widest">
+                        Tier Variation Activated
+                      </span>
                       <div className="flex gap-2">
-                        <button onClick={() => cycleVariation('prev')} className="hover:text-[#00F2FF] text-[#A0D2EB]/30"><ChevronLeft className="w-4 h-4" /></button>
-                        <button onClick={() => cycleVariation('next')} className="hover:text-[#00F2FF] text-[#A0D2EB]/30"><ChevronRight className="w-4 h-4" /></button>
+                        <button onClick={handleRotateBlueprint} className="hover:text-[#00F2FF] text-[#A0D2EB]/30 transition-colors"><ChevronRight className="w-5 h-5" /></button>
                       </div>
                     </div>
                   )}
@@ -774,32 +789,32 @@ export const QueueView: React.FC = () => {
                 )} />
                 <div className="relative mb-8">
                   {/* SVG HUD Progress Ring */}
-                  <svg className="w-32 h-32 transform -rotate-90">
+                  <svg className="w-40 h-40 transform -rotate-90">
                     <circle
-                      cx="64"
-                      cy="64"
-                      r="58"
+                      cx="80"
+                      cy="80"
+                      r="72"
                       stroke="currentColor"
-                      strokeWidth="2"
+                      strokeWidth="3"
                       fill="transparent"
-                      className="text-[#00F2FF]/10"
+                      className="text-[#00F2FF]/5"
                     />
                     <motion.circle
-                      cx="64"
-                      cy="64"
-                      r="58"
+                      cx="80"
+                      cy="80"
+                      r="72"
                       stroke="currentColor"
-                      strokeWidth="4"
+                      strokeWidth="5"
                       fill="transparent"
-                      strokeDasharray="364.4"
-                      initial={{ strokeDashoffset: 364.4 }}
+                      strokeDasharray="452.4"
+                      initial={{ strokeDashoffset: 452.4 }}
                       animate={{ 
-                        strokeDashoffset: 364.4 - (364.4 * (timeLeft / totalWaitTime)),
-                        transition: { duration: 1, ease: "linear" }
+                         strokeDashoffset: 452.4 - (452.4 * (timeLeft / totalWaitTime)),
+                         transition: { duration: 1, ease: "linear" }
                       }}
                       className={cn(
-                        "transition-colors duration-500",
-                        isCoolingDown ? "text-red-500 hud-pulse-red" : timeLeft < 10 ? "text-amber-400" : "text-[#00F2FF] hud-text-glow"
+                         "transition-colors duration-500",
+                         isCoolingDown ? "text-red-500 hud-pulse-red" : timeLeft < 10 ? "text-amber-400" : "text-[#00F2FF] hud-text-glow"
                       )}
                     />
                   </svg>
@@ -808,12 +823,12 @@ export const QueueView: React.FC = () => {
                     timeLeft < 10 && !isCoolingDown && "animate-pulse"
                   )}>
                     <span className={cn(
-                      "text-2xl font-black hud-text-glow",
-                      isCoolingDown ? "text-red-500" : timeLeft < 10 ? "text-amber-400" : "text-[#00F2FF]"
+                       "text-3xl font-black hud-text-glow",
+                       isCoolingDown ? "text-red-500" : timeLeft < 10 ? "text-amber-400" : "text-[#00F2FF]"
                     )}>
-                      {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+                       {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                     </span>
-                    <span className="text-[8px] text-[#00F2FF]/40 uppercase tracking-tighter">SEC_REMAINING</span>
+                    <span className="text-[9px] text-[#A0D2EB]/30 uppercase tracking-[0.2em] mt-1">SEC_STATUS</span>
                   </div>
                 </div>
                 
@@ -827,7 +842,7 @@ export const QueueView: React.FC = () => {
                 {(!autoPilot || isCoolingDown) && (
                    <button 
                      onClick={() => { setTimeLeft(0); setPacing(false); setIsCoolingDown(false); }}
-                     className="mt-8 text-[9px] font-mono text-[#A0D2EB]/30 hover:text-[#00F2FF] uppercase font-bold border border-[#00F2FF]/20 px-4 py-2 hover:bg-[#00F2FF]/5 transition-all"
+                     className="mt-8 text-[9px] font-mono text-[#A0D2EB]/30 hover:text-[#00F2FF] uppercase font-black border border-[#00F2FF]/20 px-6 py-2.5 hover:bg-[#00F2FF]/10 transition-all rounded-full backdrop-blur-xl"
                    >
                      OVERRIDE_THROTTLING
                    </button>
